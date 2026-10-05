@@ -1,12 +1,18 @@
 # NEXIS SITTA - Vibecoding Guidelines
 
 ## Tech Stack
-- Framework: Next.js (App Router) with TypeScript
+- Framework: Next.js 16 (App Router) with TypeScript
 - Database & Auth: Supabase (PostgreSQL with RLS)
-- Styling: Tailwind CSS & Shadcn/ui
+- Styling: Tailwind CSS v4 (utility classes; Shadcn/ui is NOT installed yet)
 
 ## Code Style & Rules
 1. Always write clean, production-ready TypeScript code without using `any`.
-2. All database queries must respect Supabase Row Level Security (RLS) and always filter/bind `organization_id`.
+2. All database queries must respect Supabase Row Level Security (RLS).
+   Never accept `organization_id` from user input — bind it from
+   `getSessionContext()` in `src/lib/auth/session.ts`.
 3. Separate Server Components and Client Components appropriately ('use client' only when needed).
+   Prefer Server Components for data fetching; use Server Actions for mutations.
 4. Use modern async/await patterns for Next.js App Router server actions.
+5. A `'use server'` module may only export async functions. Shared state
+   objects and interfaces belong in a separate non-server module
+   (see `src/lib/auth/types.ts`, `src/lib/products/types.ts`).

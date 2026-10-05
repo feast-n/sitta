@@ -1,135 +1,61 @@
-'use client';
+import { redirect } from 'next/navigation';
+import { getSessionContext } from '@/lib/auth/session';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { ProductForm } from '@/components/products/product-form';
+import { DeleteProductButton } from '@/components/products/delete-product-button';
+import type { Product } from '@/lib/products/types';
 
-import { useEffect, useState } from 'react';
-import { createSupabaseClient } from '@/lib/supabase/client';
+export const dynamic = 'force-dynamic';
 
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  stock: number;
-  price: number;
-  created_at: string;
+const LOW_STOCK_THRESHOLD = 10;
+
+function formatIDR(value: number): string {
+  return `Rp ${value.toLocaleString('id-ID')}`;
 }
 
-export default function ProductsPage() {
-  const supabase = createSupabaseClient();
+export default async function ProductsPage() {
+  const context = await getSessionContext();
+  if (!context) {
+    redirect('/login');
+  }
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // RLS scopes this query to the caller's organization, so no manual
+  // organization_id filter is needed (and none is accepted from input).
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('products')
+    .select('*')
+    .order('created_at', { ascending: false });
 
-  // Form State
-  const [name, setName] = useState('');
-  const [sku, setSku] = useState('');
-  const [stock, setStock] = useState(0);
-  const [price, setPrice] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
-
-  // Fetch Products
-  const fetchProducts = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching products:', error.message);
-    } else {
-      setProducts(data || []);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchProducts();
-  }, []);
-
-  // Handle Add Product
-  const handleAddProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      alert('User belum login!');
-      setSubmitting(false);
-      return;
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', user.id)
-      .single();
-
-    if (!profile?.organization_id) {
-      alert('Organization ID tidak ditemukan pada profile user ini!');
-      setSubmitting(false);
-      return;
-    }
-
-    const { error } = await supabase.from('products').insert([
-      {
-        name,
-        sku,
-        stock: Number(stock),
-        price: Number(price),
-        organization_id: profile.organization_id,
-      },
-    ]);
-
-    if (error) {
-      alert(`Gagal menambah produk: ${error.message}`);
-    } else {
-      setName('');
-      setSku('');
-      setStock(0);
-      setPrice(0);
-      setIsModalOpen(false);
-      fetchProducts();
-    }
-    setSubmitting(false);
-  };
-
-  // Handle Delete Product
-  const handleDeleteProduct = async (id: string) => {
-    if (!confirm('Apakah kamu yakin ingin menghapus produk ini?')) return;
-
-    const { error } = await supabase.from('products').delete().eq('id', id);
-
-    if (error) {
-      alert(`Gagal menghapus produk: ${error.message}`);
-    } else {
-      fetchProducts();
-    }
-  };
+  const products: Product[] = data ?? [];
 
   return (
     <div className="space-y-6">
-      {/* Header & Action */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-            Products & Inventory
+            Products &amp; Inventory
           </h1>
           <p className="text-sm text-gray-500">
-            Kelola katalog barang dan stok produk di dalam organisasi kamu.
+            Kelola katalog barang dan stok di organisasi{' '}
+            {context.organizationName}.
           </p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-        >
-          + Add Product
-        </button>
+        <ProductForm />
       </div>
 
-      {/* Table Products */}
+      {error ? (
+        <p
+          role="alert"
+          className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+        >
+          Gagal memuat produk: {error.message}
+        </p>
+      ) : null}
+
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase text-gray-500 dark:border-gray-800 dark:bg-gray-800/50 dark:text-gray-400">
+          <thead className="border-b border-gray-200 bg-gray-50 text-xs font-semibold tracking-wide text-gray-500 uppercase dark:border-gray-800 dark:bg-gray-800/50 dark:text-gray-400">
             <tr>
               <th className="px-6 py-3">Product Name</th>
               <th className="px-6 py-3">SKU</th>
@@ -139,29 +65,32 @@ export default function ProductsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-            {loading ? (
+            {products.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                  Loading products...
-                </td>
-              </tr>
-            ) : products.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                  Belum ada produk. Klik <strong>+ Add Product</strong> untuk membuat produk pertama.
+                <td
+                  colSpan={5}
+                  className="px-6 py-8 text-center text-gray-500"
+                >
+                  Belum ada produk. Klik <strong>+ Add Product</strong> untuk
+                  membuat produk pertama.
                 </td>
               </tr>
             ) : (
               products.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                <tr
+                  key={item.id}
+                  className="hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                >
                   <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                     {item.name}
                   </td>
-                  <td className="px-6 py-4 text-gray-500 font-mono text-xs">{item.sku}</td>
+                  <td className="px-6 py-4 font-mono text-xs text-gray-500">
+                    {item.sku}
+                  </td>
                   <td className="px-6 py-4">
                     <span
                       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        item.stock < 10
+                        item.stock < LOW_STOCK_THRESHOLD
                           ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
                           : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                       }`}
@@ -169,16 +98,15 @@ export default function ProductsPage() {
                       {item.stock} unit
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-gray-900 dark:text-white font-medium">
-                    Rp {item.price.toLocaleString('id-ID')}
+                  <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                    {formatIDR(item.price)}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button
-                      onClick={() => handleDeleteProduct(item.id)}
-                      className="text-xs font-semibold text-rose-600 hover:text-rose-800 dark:hover:text-rose-400"
-                    >
-                      Delete
-                    </button>
+                    {context.role === 'admin' ? (
+                      <DeleteProductButton id={item.id} />
+                    ) : (
+                      <span className="text-xs text-gray-400">Read only</span>
+                    )}
                   </td>
                 </tr>
               ))
@@ -186,89 +114,6 @@ export default function ProductsPage() {
           </tbody>
         </table>
       </div>
-
-      {/* Modal Add Product */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-900 dark:border dark:border-gray-800">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-              Add New Product
-            </h3>
-            <form onSubmit={handleAddProduct} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Product Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Laptop Asus ROG"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  SKU Code
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={sku}
-                  onChange={(e) => setSku(e.target.value)}
-                  placeholder="e.g. LAP-ASUS-001"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Initial Stock
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    value={stock}
-                    onChange={(e) => setStock(Number(e.target.value))}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Price (IDR)
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    value={price}
-                    onChange={(e) => setPrice(Number(e.target.value))}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {submitting ? 'Saving...' : 'Save Product'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
