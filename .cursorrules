@@ -1,0 +1,12 @@
+# NEXIS SITTA - Vibecoding Guidelines
+
+## Tech Stack
+- Framework: Next.js (App Router) with TypeScript
+- Database & Auth: Supabase (PostgreSQL with RLS)
+- Styling: Tailwind CSS & Shadcn/ui
+
+## Code Style & Rules
+1. Always write clean, production-ready TypeScript code without using `any`.
+2. All database queries must respect Supabase Row Level Security (RLS) and always filter/bind `organization_id`.
+3. Separate Server Components and Client Components appropriately ('use client' only when needed).
+4. Use modern async/await patterns for Next.js App Router server actions.
